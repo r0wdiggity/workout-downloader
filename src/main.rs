@@ -28,8 +28,10 @@ fn get_today() -> String {
 
 fn parse_json(json: &str) -> (String, String) {
     let workouts: Vec<Workout> = serde_json::from_str(json).expect("Could not parse workouts json");
+    println!("\tFound {} workouts ...", workouts.len());
     for workout in workouts {
-        if workout.type_name == "Ride" || workout.type_name == "Virtual Ride" {
+        println!("\tChecking workout {} ...", workout.name);
+        if workout.type_name == "Ride" || workout.type_name == "VirtualRide" {
             return (workout.id.to_string(), workout.name)
         }
     }
@@ -60,25 +62,39 @@ fn build_request(uri: http::Uri, body: Body, method: hyper::Method) -> Request<B
 async fn get_workout_id(client: &Client<HttpsConnector<HttpConnector>>, user_id: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>>{
     let endpoint = format!("/api/v1/athlete/{}/events?oldest={}&newest={}", user_id, get_today(), get_today());
     let req = build_request(build_uri(&endpoint), build_body(), Method::GET);
-    println!("{:?}",build_uri(&endpoint));
+    println!("\t{:?}",build_uri(&endpoint));
     let result = client.request(req).await?;
 
-    let body = hyper::body::to_bytes(result.into_body()).await?;
-    let body_string = String::from_utf8(body.to_vec()).unwrap();
+    let status = result.status();
 
-    Ok(parse_json(&body_string))
+    if status == 200 {
+        println!("\tSuccessful request made to list today's workouts ...");
+        let body = hyper::body::to_bytes(result.into_body()).await?;
+        let body_string = String::from_utf8(body.to_vec()).unwrap();
+
+        Ok(parse_json(&body_string))
+    } else {
+        panic!("Error, recieved status code {status}");
+    }
 }
 
 async fn get_workout(client: &Client<HttpsConnector<HttpConnector>>, workout_id: &str, user_id: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>  {
     let ext = "zwo";
     let endpoint = format!("/api/v1/athlete/{}/events/{}/download{}", user_id, workout_id, ext);
-    let req = build_request(build_uri(&endpoint), build_body(), Method::POST);
+    let req = build_request(build_uri(&endpoint), build_body(), Method::GET);
 
     let result = client.request(req).await?;
 
-    let workout = hyper::body::to_bytes(result.into_body()).await?;
+    let status = result.status();
 
-    Ok(workout.to_vec())
+    if status == 200 {
+        println!("\tSuccessful request made to download workout ...");
+        let workout = hyper::body::to_bytes(result.into_body()).await?;
+
+        Ok(workout.to_vec())
+    } else {
+        panic!("Error, recieved status code {status}");
+    }
 }
 
 #[tokio::main]
@@ -109,6 +125,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut file = File::create(path).expect("Failed to create file");
 
-    let _ = file.write_all(bytes);
-    Ok(())
+    match file.write_all(bytes) {
+        Ok(()) => {
+            println!("Successfully wrote workout {workout_name} to {path}");
+            Ok(())
+        },
+        Err(e) => Err(Box::<dyn std::error::Error + Send + Sync>::from(e.to_string())),
+    }
 }

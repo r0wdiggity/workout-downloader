@@ -14,3 +14,10 @@ hyper-tls = { version = "0.5.0"}
 serde = { version = "1.0.145", features = ["derive"]}
 serde_json = { version = "1.0.85"}
 tokio = { version = "1", features = ["full"] }
+
+
+[profile.release]
+debug = 1
+
+[rust]
+debuginfo-level = 1
